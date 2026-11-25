@@ -25,8 +25,12 @@ services:
         generateValue: true
       - key: JWT_EXPIRES_IN
         value: 1h
-      # Render pone un proxy delante de la API: así req.ip es la IP real del visitante.
+      # En Render la petición atraviesa DOS proxies antes de llegar a la API.
+      # Con 1, req.ip era la IP del proxy intermedio (rotaba entre varias y el
+      # rate limiting no contaba por visitante). Con 2, req.ip es la IP real.
+      # Cómo comprobarlo: la "pk" de la cabecera RateLimit-Policy debe ser
+      # el hash SHA-256 de la IP pública del cliente (y no cambiar entre peticiones).
       - key: TRUST_PROXY
-        value: '1'
+        value: '2'
       - key: LOG_LEVEL
         value: info

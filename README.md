@@ -5,8 +5,14 @@
 ![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-4169E1?logo=postgresql&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)
+[![Render](https://img.shields.io/badge/demo-en%20vivo-46E3B7?logo=render&logoColor=white)](https://task-manager-api-9598.onrender.com/api/docs)
 
 API REST de gestión de tareas construida con **Node.js, TypeScript, Express 5, Prisma, PostgreSQL y Zod**, con autenticación JWT, aislamiento de datos por usuario, rate limiting, logs estructurados, documentación OpenAPI, validación, manejo centralizado de errores, paginación, filtros, tests automatizados y despliegue con Docker.
+
+### 🌐 Demo en vivo: **[task-manager-api-9598.onrender.com/api/docs](https://task-manager-api-9598.onrender.com/api/docs)**
+
+Abre Swagger, registra un usuario, pulsa **Authorize** con el token y prueba los endpoints.
+> Corre en el plan gratuito de Render: si nadie la usó en los últimos 15 minutos, la primera petición tarda unos 50 segundos mientras el servicio despierta.
 
 ## Stack
 
@@ -138,6 +144,32 @@ El pipeline corre con permisos de solo lectura y cancela ejecuciones viejas si l
 sh ./scripts/smoke-test.sh http://localhost:4000
 ```
 
+## Despliegue (Render + Neon)
+
+```
+git push a main
+   │
+   ▼
+GitHub Actions: tests ─▶ Docker + prueba de humo ─▶ prisma migrate deploy (Neon)
+   │                                                     │
+   │                todo en verde ◀──────────────────────┘
+   ▼
+Render (autoDeployTrigger: checksPass): construye el Dockerfile y publica
+   │
+   ▼
+Health check en /api/health → recibe tráfico solo si responde 200
+```
+
+| Pieza | Servicio | Detalle |
+|---|---|---|
+| API | **Render** (plan free, Docker) | Definida como código en [`render.yaml`](render.yaml) (Blueprint) |
+| Base de datos | **Neon** (PostgreSQL 17, free) | No vence. Se suspende sin uso y despierta en la siguiente consulta |
+| Migraciones | **GitHub Actions** | Job `migrate`, solo en `main` y después de tests y Docker |
+
+**Secretos:** `DATABASE_URL` se guarda como secreto en GitHub (`PRODUCTION_DATABASE_URL`) y en el panel de Render. `JWT_SECRET` lo genera Render (`generateValue: true`) y nadie lo conoce. Ninguno de los dos está en el repositorio.
+
+**Orden garantizado:** Render despliega solo cuando el CI completo, incluidas las migraciones, terminó en verde. Así el código nuevo nunca llega antes que las tablas que necesita.
+
 ## Documentación interactiva (Swagger)
 
 Con el servidor encendido:
@@ -200,7 +232,7 @@ Cada petición produce **una línea JSON** con método, URL, código, tiempo de 
 Las respuestas incluyen las cabeceras estándar `RateLimit` y `RateLimit-Policy` (draft-8), por ejemplo `"10-in-15min"; r=3; t=840`. Al superar el límite se responde **429** con `Retry-After`. `/api/health` y `/api/docs` no tienen límite.
 
 **En producción hay que considerar:**
-- `TRUST_PROXY`: detrás de un balanceador, ponlo en `1` (o en el número de proxies). Si no, todas las peticiones parecen venir de la IP del proxy y se bloquearían juntas. En Docker Desktop local pasa algo parecido: todas llegan desde la IP del gateway de Docker.
+- `TRUST_PROXY` debe ser **exactamente** el número de proxies delante de la API. Si es menor, `req.ip` es la IP de un proxy: los visitantes comparten contador y un atacante obtiene más intentos. Si es mayor, un cliente puede falsificar su IP con la cabecera `X-Forwarded-For`. En Render se usa `2`. Para comprobarlo, la `pk` de la cabecera `RateLimit-Policy` (SHA-256 de la clave) debe coincidir con el hash de la IP pública del cliente y mantenerse igual entre peticiones. En Docker Desktop local todas las peticiones llegan desde la IP del gateway de Docker.
 - Los contadores viven en memoria: se reinician con la API y no se comparten entre réplicas. Con varias instancias, conviene un *store* compartido como Redis (`rate-limit-redis`).
 
 **Query params de `GET /api/tasks`:** `status` (PENDING, IN_PROGRESS, DONE), `priority` (LOW, MEDIUM, HIGH), `search` (en título y descripción, sin distinguir mayúsculas), `page`, `limit` (máx. 100), `sortBy` (createdAt, dueDate, priority, title), `order` (asc, desc). Ordenar por `priority` respeta el orden lógico LOW < MEDIUM < HIGH (enum de PostgreSQL), no el alfabético.
@@ -240,4 +272,4 @@ Error de validación (formato uniforme):
 - [x] PostgreSQL + Docker Compose (Prisma 7)
 - [x] Logging estructurado y rate limiting
 - [x] CI con GitHub Actions (tests, auditoría, build de Docker y prueba de humo)
-- [ ] Despliegue en la nube
+- [x] Despliegue en la nube (Render + Neon, con migraciones automáticas desde CI)
