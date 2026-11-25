@@ -8,10 +8,11 @@ on:
   pull_request:
     branches: [main]
 
-# Si haces dos push seguidos, cancela la ejecución vieja y deja solo la nueva.
+# En pull requests, si llega un push nuevo, cancela la ejecución vieja.
+# En main NO se cancela: no queremos cortar una migración de producción a la mitad.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # El robot solo necesita LEER el código (principio de mínimo privilegio).
 permissions:
@@ -94,3 +95,38 @@ jobs:
       - name: Apagar todo
         if: always()
         run: docker compose down -v
+
+  # ── Trabajo 3: migraciones de producción (CD) ──────────────────────────────
+  # Solo en main y solo si todo lo anterior pasó. Render está configurado para
+  # desplegar cuando el CI termina en verde (autoDeployTrigger: checksPass),
+  # así que las tablas SIEMPRE se actualizan ANTES de que llegue el código nuevo.
+  migrate:
+    name: Migraciones en producción
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: [test, docker]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Descargar el código
+        uses: actions/checkout@v7
+
+      - name: Instalar Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Aplicar migraciones pendientes (prisma migrate deploy)
+        env:
+          # Secreto guardado en GitHub (Settings → Secrets → Actions). Nunca en el código.
+          DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::warning::PRODUCTION_DATABASE_URL no está configurado; se omiten las migraciones."
+            exit 0
+          fi
+          npx prisma migrate deploy

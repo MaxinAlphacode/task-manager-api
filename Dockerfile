@@ -24,6 +24,8 @@ RUN npm run build
 # ── Etapa runtime: la imagen final, pequeña y sin herramientas de desarrollo ─
 FROM base AS runtime
 ENV NODE_ENV=production
+# Puerto por defecto; plataformas como Render lo cambian con su propia variable PORT.
+ENV PORT=4000
 COPY package.json package-lock.json ./
 # Solo dependencias de producción; sin scripts (el cliente de Prisma ya viene compilado en dist).
 # --omit=optional: @prisma/client declara la CLI de Prisma y TypeScript como dependencias
@@ -38,6 +40,6 @@ EXPOSE 4000
 
 # Docker pregunta cada 15 s "¿estás vivo?" usando nuestro /api/health.
 HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=3 \
-  CMD wget -qO- http://localhost:4000/api/health || exit 1
+  CMD wget -qO- "http://localhost:${PORT}/api/health" || exit 1
 
 CMD ["node", "dist/server.js"]

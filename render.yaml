@@ -1,0 +1,32 @@
+# Render "Blueprint": la infraestructura descrita como código.
+# Render lee este archivo y crea el servicio exactamente así (Infrastructure as Code).
+#
+# La base de datos NO vive aquí: está en Neon (PostgreSQL gratuito que no vence).
+# Las migraciones las aplica GitHub Actions ANTES de que Render despliegue (ver ci.yml).
+
+services:
+  - type: web
+    name: task-manager-api
+    runtime: docker # construye nuestro Dockerfile tal cual
+    plan: free
+    region: virginia # misma zona que la base de datos en Neon (AWS us-east-1) = menos latencia
+    branch: main
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /api/health # si no responde 200, Render no manda tráfico a la versión nueva
+    autoDeployTrigger: checksPass # solo despliega cuando el CI de GitHub está en verde
+
+    envVars:
+      # Se pega a mano en el panel de Render (nunca va en el repositorio).
+      - key: DATABASE_URL
+        sync: false
+      # Render genera un secreto aleatorio: nadie lo conoce, ni siquiera nosotros.
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: 1h
+      # Render pone un proxy delante de la API: así req.ip es la IP real del visitante.
+      - key: TRUST_PROXY
+        value: '1'
+      - key: LOG_LEVEL
+        value: info
