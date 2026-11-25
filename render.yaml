@@ -25,12 +25,15 @@ services:
         generateValue: true
       - key: JWT_EXPIRES_IN
         value: 1h
-      # En Render la petición atraviesa DOS proxies antes de llegar a la API.
-      # Con 1, req.ip era la IP del proxy intermedio (rotaba entre varias y el
-      # rate limiting no contaba por visitante). Con 2, req.ip es la IP real.
+      # En Render la petición atraviesa TRES proxies antes de llegar a la API
+      # (medido: X-Forwarded-For llega con 3 entradas, cliente + 2 proxies, y el
+      # socket es el tercer proxy). Con 1 o 2, req.ip era la IP de un proxy
+      # intermedio (rotaba y el rate limiting no contaba por visitante).
+      # Con 3, req.ip es la IP real, y un X-Forwarded-For inventado por el
+      # cliente queda a la izquierda y se ignora.
       # Cómo comprobarlo: la "pk" de la cabecera RateLimit-Policy debe ser
       # el hash SHA-256 de la IP pública del cliente (y no cambiar entre peticiones).
       - key: TRUST_PROXY
-        value: '2'
+        value: '3'
       - key: LOG_LEVEL
         value: info
