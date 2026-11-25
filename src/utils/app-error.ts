@@ -15,4 +15,12 @@ export class AppError extends Error {
   static badRequest(message = 'Solicitud inválida') {
     return new AppError(400, message);
   }
+
+  static unauthorized(message = 'No autenticado') {
+    return new AppError(401, message);
+  }
+
+  static conflict(message = 'El recurso ya existe') {
+    return new AppError(409, message);
+  }
 }

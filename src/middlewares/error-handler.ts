@@ -1,4 +1,5 @@
 import type { ErrorRequestHandler, RequestHandler } from 'express';
+import { Prisma } from '@prisma/client';
 import { ZodError } from 'zod';
 import { AppError } from '../utils/app-error';
 
@@ -22,6 +23,12 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
 
   if (err instanceof AppError) {
     res.status(err.statusCode).json({ error: { message: err.message } });
+    return;
+  }
+
+  // Dato repetido en un campo único (ej: dos registros con el mismo email al mismo tiempo)
+  if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+    res.status(409).json({ error: { message: 'El recurso ya existe' } });
     return;
   }
 

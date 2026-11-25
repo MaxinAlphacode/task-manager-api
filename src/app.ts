@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import { authRouter } from './modules/auth/auth.routes';
 import { taskRouter } from './modules/tasks/task.routes';
 import { errorHandler, notFoundHandler } from './middlewares/error-handler';
 
@@ -17,6 +18,7 @@ export function createApp() {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
   });
 
+  app.use('/api/auth', authRouter);
   app.use('/api/tasks', taskRouter);
 
   app.use(notFoundHandler);
