@@ -104,7 +104,11 @@ export const openApiDocument = {
     description:
       'API REST de gestión de tareas con autenticación JWT.\n\n' +
       '**Cómo probarla:** 1) `POST /api/auth/register` o `/login`, 2) copia el `token`, ' +
-      '3) pulsa **Authorize** arriba a la derecha y pégalo, 4) ya puedes usar las rutas 🔒.',
+      '3) pulsa **Authorize** arriba a la derecha y pégalo, 4) ya puedes usar las rutas 🔒.\n\n' +
+      '**Rate limiting:** las rutas de `/api/auth` y `/api/tasks` tienen un límite de peticiones por IP ' +
+      '(y uno más estricto para intentos fallidos de login/registro). Al superarlo se responde `429` ' +
+      'con la cabecera `Retry-After`. Las cabeceras `RateLimit` y `RateLimit-Policy` indican el cupo restante.\n\n' +
+      '**Trazabilidad:** cada respuesta incluye `X-Request-Id`. Puedes enviar el tuyo en la misma cabecera.',
   },
   servers: [{ url: '/', description: 'Este servidor' }],
   tags: [
@@ -310,6 +314,36 @@ export const openApiDocument = {
         description: 'No existe (o no es tuya)',
         ...json(ref('Error'), { error: { message: 'Tarea no encontrada' } }),
       },
+      TooManyRequests: {
+        description: 'Demasiadas peticiones desde esta IP',
+        headers: {
+          'Retry-After': { description: 'Segundos hasta poder reintentar', schema: { type: 'integer' } },
+        },
+        ...json(
+          {
+            type: 'object',
+            properties: {
+              error: {
+                type: 'object',
+                properties: { message: { type: 'string' }, retryAfterSeconds: { type: 'integer' } },
+              },
+            },
+          },
+          { error: { message: 'Demasiadas solicitudes, intenta de nuevo más tarde', retryAfterSeconds: 840 } },
+        ),
+      },
     },
   },
 };
+
+// Todas las rutas con rate limiting pueden responder 429. Lo agregamos con código
+// en vez de a mano, para que ninguna ruta nueva se quede sin documentarlo.
+const RATE_LIMITED_PREFIXES = ['/api/auth', '/api/tasks'];
+for (const [path, item] of Object.entries(openApiDocument.paths)) {
+  if (!RATE_LIMITED_PREFIXES.some((prefix) => path.startsWith(prefix))) continue;
+  for (const operation of Object.values(item)) {
+    if (operation && typeof operation === 'object' && 'responses' in operation) {
+      (operation.responses as Record<string, unknown>)[429] = err('TooManyRequests');
+    }
+  }
+}

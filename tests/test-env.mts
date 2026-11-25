@@ -8,4 +8,8 @@ export const testEnv = {
     'postgresql://taskmanager:taskmanager@localhost:5433/taskmanager_test',
   JWT_SECRET: 'secreto-solo-para-tests-0123456789abcdef',
   JWT_EXPIRES_IN: '1h',
+  // Límites altos para la suite normal; los tests de rate limiting crean
+  // su propia app con límites pequeños (ver tests/rate-limit.test.ts).
+  RATE_LIMIT_MAX: '10000',
+  RATE_LIMIT_AUTH_MAX: '10000',
 };

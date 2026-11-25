@@ -6,7 +6,7 @@
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-4169E1?logo=postgresql&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)
 
-API REST de gestión de tareas construida con **Node.js, TypeScript, Express 5, Prisma, PostgreSQL y Zod**, con autenticación JWT, aislamiento de datos por usuario, documentación OpenAPI, validación, manejo centralizado de errores, paginación, filtros, tests automatizados y despliegue con Docker.
+API REST de gestión de tareas construida con **Node.js, TypeScript, Express 5, Prisma, PostgreSQL y Zod**, con autenticación JWT, aislamiento de datos por usuario, rate limiting, logs estructurados, documentación OpenAPI, validación, manejo centralizado de errores, paginación, filtros, tests automatizados y despliegue con Docker.
 
 ## Stack
 
@@ -19,7 +19,8 @@ API REST de gestión de tareas construida con **Node.js, TypeScript, Express 5, 
 | Validación | Zod | Valida entradas y genera los tipos TypeScript |
 | Autenticación | JWT (jsonwebtoken) + bcryptjs | Tokens firmados y contraseñas hasheadas |
 | Documentación | OpenAPI 3.1 + Swagger UI | Documentación interactiva generada desde los esquemas Zod |
-| Seguridad | Helmet, CORS | Cabeceras seguras y control de orígenes |
+| Seguridad | Helmet, CORS, express-rate-limit | Cabeceras seguras, control de orígenes y límite de peticiones por IP |
+| Observabilidad | Pino + pino-http | Logs JSON estructurados con request ID y datos sensibles ocultos |
 | Tests | Vitest + Supertest | Tests de integración contra la API y un PostgreSQL real |
 | Contenedores | Docker (multi-stage) + Docker Compose | Mismo entorno en cualquier máquina |
 | CI | GitHub Actions | Tests, auditoría y prueba de humo en cada push |
@@ -53,8 +54,9 @@ src/
 ├── server.ts              # arranca el servidor y maneja el apagado
 ├── config/env.ts          # valida variables de entorno al iniciar
 ├── lib/prisma.ts          # cliente único de base de datos (Prisma + adaptador pg)
+├── lib/logger.ts          # logger Pino (JSON en producción, legible en desarrollo)
 ├── generated/prisma/      # cliente de Prisma generado (no se sube a git)
-├── middlewares/           # autenticación, 404 y manejador global de errores
+├── middlewares/           # autenticación, logs de peticiones, rate limiting, 404 y errores
 ├── utils/app-error.ts     # errores HTTP conocidos (400, 401, 404, 409...)
 ├── types/express.d.ts     # añade req.user al tipo Request de Express
 ├── docs/openapi.ts        # documento OpenAPI (generado a partir de los esquemas Zod)
@@ -127,7 +129,7 @@ Cada `push` y cada *pull request* a `main` ejecuta [`ci.yml`](.github/workflows/
 
 | Trabajo | Qué comprueba |
 |---|---|
-| **Typecheck, tests y auditoría** | `npm ci` → `tsc --noEmit` → 20 tests contra un PostgreSQL de servicio → `npm audit` de producción (falla si hay vulnerabilidades altas) |
+| **Typecheck, tests y auditoría** | `npm ci` → `tsc --noEmit` → tests de integración contra un PostgreSQL de servicio → `npm audit` de producción (falla si hay vulnerabilidades altas) |
 | **Imagen Docker y prueba de humo** | Solo si el anterior pasó: `docker compose up --build --wait` (db → migrate → api) y [`smoke-test.sh`](scripts/smoke-test.sh): health, registro, 401 sin token, crear y listar tareas |
 
 El pipeline corre con permisos de solo lectura y cancela ejecuciones viejas si llega un push nuevo. Para correr la prueba de humo en local (con Git Bash y el stack encendido):
@@ -170,6 +172,36 @@ Para usar las rutas 🔒: haz `register` o `login`, copia el `token`, pulsa **Au
 - **Login sin pistas:** mismo mensaje y tiempo de respuesta si falla el email o la contraseña (evita enumerar usuarios).
 - **Aislamiento por usuario:** cada consulta filtra por `userId`. Pedir una tarea ajena responde **404** (no 403), para no revelar que existe.
 - **Configuración validada al arrancar:** la app no inicia si falta `JWT_SECRET` o es demasiado corto.
+- **Rate limiting contra fuerza bruta:** login y registro permiten 10 intentos **fallidos** por IP cada 15 minutos (los exitosos no cuentan). Al superarlo, ni la contraseña correcta entra hasta que la ventana se reinicie. Toda la API tiene además un límite general de 300 peticiones por IP.
+
+## Logs y rate limiting
+
+### Logs estructurados (Pino)
+
+Cada petición produce **una línea JSON** con método, URL, código, tiempo de respuesta y un **request ID**:
+
+```json
+{"level":40,"service":"task-manager-api","req":{"id":"c22b1016-...","method":"POST","url":"/api/auth/login"},"res":{"statusCode":429},"responseTime":1,"msg":"request completed"}
+```
+
+- **Request ID:** viaja en la cabecera `X-Request-Id`. Se respeta el que envíe el cliente si es seguro (`[A-Za-z0-9_-]`, máx. 64), o se genera un UUID. Los errores 500 lo devuelven en el cuerpo para poder rastrearlos.
+- **Nivel según el resultado:** 5xx → `error`, 4xx → `warn`, resto → `info`. Se controla con `LOG_LEVEL`.
+- **Sin secretos:** `Authorization`, cookies, `password`, `passwordHash` y `token` se reemplazan por `[OCULTO]`. Tampoco se registran cabeceras ni cuerpos de las peticiones.
+- **Sin ruido:** los health checks de Docker no se registran.
+- En desarrollo se usa `pino-pretty` (legible y con colores). En producción, JSON puro, listo para Datadog, Loki o CloudWatch.
+
+### Rate limiting (express-rate-limit)
+
+| Límite | Aplica a | Por defecto |
+|---|---|---|
+| General | `/api/auth/*`, `/api/tasks/*` | 300 peticiones / 15 min por IP |
+| Autenticación | `POST /login`, `POST /register` | 10 intentos **fallidos** / 15 min por IP |
+
+Las respuestas incluyen las cabeceras estándar `RateLimit` y `RateLimit-Policy` (draft-8), por ejemplo `"10-in-15min"; r=3; t=840`. Al superar el límite se responde **429** con `Retry-After`. `/api/health` y `/api/docs` no tienen límite.
+
+**En producción hay que considerar:**
+- `TRUST_PROXY`: detrás de un balanceador, ponlo en `1` (o en el número de proxies). Si no, todas las peticiones parecen venir de la IP del proxy y se bloquearían juntas. En Docker Desktop local pasa algo parecido: todas llegan desde la IP del gateway de Docker.
+- Los contadores viven en memoria: se reinician con la API y no se comparten entre réplicas. Con varias instancias, conviene un *store* compartido como Redis (`rate-limit-redis`).
 
 **Query params de `GET /api/tasks`:** `status` (PENDING, IN_PROGRESS, DONE), `priority` (LOW, MEDIUM, HIGH), `search` (en título y descripción, sin distinguir mayúsculas), `page`, `limit` (máx. 100), `sortBy` (createdAt, dueDate, priority, title), `order` (asc, desc). Ordenar por `priority` respeta el orden lógico LOW < MEDIUM < HIGH (enum de PostgreSQL), no el alfabético.
 
@@ -206,6 +238,6 @@ Error de validación (formato uniforme):
 - [x] Usuarios y autenticación con JWT (cada usuario ve solo sus tareas)
 - [x] Documentación interactiva con Swagger / OpenAPI
 - [x] PostgreSQL + Docker Compose (Prisma 7)
-- [ ] Logging estructurado y rate limiting
+- [x] Logging estructurado y rate limiting
 - [x] CI con GitHub Actions (tests, auditoría, build de Docker y prueba de humo)
 - [ ] Despliegue en la nube

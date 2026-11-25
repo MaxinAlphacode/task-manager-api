@@ -10,7 +10,7 @@ export const notFoundHandler: RequestHandler = (req, res) => {
 
 // El "botiquín": todos los errores de la app terminan aquí y se responden
 // siempre con el mismo formato JSON.
-export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
+export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
   if (err instanceof ZodError) {
     res.status(400).json({
       error: {
@@ -38,6 +38,8 @@ export const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
     return;
   }
 
-  console.error(err);
-  res.status(500).json({ error: { message: 'Error interno del servidor' } });
+  // Error inesperado: lo registramos con todo el detalle (stack incluido) en el log,
+  // pero al cliente solo le damos el "número de ticket" para que pueda reportarlo.
+  req.log.error({ err }, 'error no controlado');
+  res.status(500).json({ error: { message: 'Error interno del servidor', requestId: req.id } });
 };
