@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -38,6 +39,26 @@ export function createApp(options: AppOptions = {}) {
     } catch {
       res.status(503).json({ status: 'error', database: 'down', timestamp: new Date().toISOString() });
     }
+  });
+
+  // ⚠️ TEMPORAL: diagnóstico de la cadena de proxies en Render (se elimina después).
+  // No expone IPs: solo huellas SHA-256 (12 caracteres), igual que la "pk" de RateLimit-Policy.
+  app.get('/api/_debug/proxy-chain', (req, res) => {
+    const h = (v: string | undefined) => (v ? createHash('sha256').update(v).digest('hex').slice(0, 12) : null);
+    const header = (name: string) => {
+      const v = req.headers[name];
+      return Array.isArray(v) ? v.join(',') : v;
+    };
+    const xff = (header('x-forwarded-for') ?? '').split(',').map((s) => s.trim()).filter(Boolean);
+    res.json({
+      trustProxy: env.TRUST_PROXY,
+      reqIp: h(req.ip),
+      socket: h(req.socket.remoteAddress),
+      xffLeftToRight: xff.map(h),
+      cfConnectingIp: h(header('cf-connecting-ip')),
+      trueClientIp: h(header('true-client-ip')),
+      xRealIp: h(header('x-real-ip')),
+    });
   });
 
   // Documentación: el JSON "crudo" para máquinas y la página bonita para personas.
