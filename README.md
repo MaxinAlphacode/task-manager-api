@@ -12,6 +12,7 @@ API REST de gestión de tareas construida con **Node.js, TypeScript, Express 5, 
 | ORM | Prisma | Esquema declarativo, migraciones, consultas tipadas |
 | Validación | Zod | Valida entradas y genera los tipos TypeScript |
 | Autenticación | JWT (jsonwebtoken) + bcryptjs | Tokens firmados y contraseñas hasheadas |
+| Documentación | OpenAPI 3.1 + Swagger UI | Documentación interactiva generada desde los esquemas Zod |
 | Seguridad | Helmet, CORS | Cabeceras seguras y control de orígenes |
 | Tests | Vitest + Supertest | Tests de integración contra la API real |
 
@@ -47,6 +48,7 @@ src/
 ├── middlewares/           # autenticación, 404 y manejador global de errores
 ├── utils/app-error.ts     # errores HTTP conocidos (400, 401, 404, 409...)
 ├── types/express.d.ts     # añade req.user al tipo Request de Express
+├── docs/openapi.ts        # documento OpenAPI (generado a partir de los esquemas Zod)
 └── modules/
     ├── auth/              # registro, login, emisión y verificación de JWT
     └── tasks/             # CRUD de tareas (organización por módulo)
@@ -61,7 +63,7 @@ npm install
 cp .env.example .env         # en PowerShell: Copy-Item .env.example .env
                              # y pon un JWT_SECRET largo y aleatorio (mín. 32 caracteres)
 npm run db:migrate           # crea la base de datos y las tablas
-npm run dev                  # http://localhost:3000
+npm run dev                  # http://localhost:4000
 ```
 
 | Script | Qué hace |
@@ -70,6 +72,17 @@ npm run dev                  # http://localhost:3000
 | `npm test` | Corre los tests |
 | `npm run build` / `npm start` | Compila a JavaScript y corre la versión de producción |
 | `npm run db:studio` | Abre una interfaz web para ver la base de datos |
+
+## Documentación interactiva (Swagger)
+
+Con el servidor encendido:
+
+- **http://localhost:4000/api/docs**: Swagger UI para leer y probar cada endpoint desde el navegador.
+- **http://localhost:4000/api/docs.json**: la especificación OpenAPI 3.1 en JSON, importable en Postman, Insomnia o generadores de clientes.
+
+Para usar las rutas 🔒: haz `register` o `login`, copia el `token`, pulsa **Authorize** y pégalo.
+
+> Las reglas de entrada de la documentación se generan con `z.toJSONSchema()` a partir de los **mismos esquemas Zod que validan las peticiones**, así que la documentación y la validación no pueden desincronizarse. Un test valida el documento contra el estándar OpenAPI y comprueba que cada ruta documentada exista en la API.
 
 ## Endpoints
 
@@ -101,12 +114,12 @@ npm run dev                  # http://localhost:3000
 
 ```bash
 # 1. Registrarse (o iniciar sesión) para obtener un token
-curl -X POST http://localhost:3000/api/auth/register \
+curl -X POST http://localhost:4000/api/auth/register \
   -H "Content-Type: application/json" \
   -d '{"name":"Cristian","email":"cristian@example.com","password":"contraseña-segura"}'
 
 # 2. Usar el token para crear una tarea
-curl -X POST http://localhost:3000/api/tasks \
+curl -X POST http://localhost:4000/api/tasks \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <token>" \
   -d '{"title":"Preparar entrevista","priority":"HIGH","dueDate":"2026-12-01T10:00:00Z"}'
@@ -128,7 +141,7 @@ Error de validación (formato uniforme):
 - [x] CRUD de tareas con validación, filtros, búsqueda y paginación
 - [x] Manejo centralizado de errores y tests de integración
 - [x] Usuarios y autenticación con JWT (cada usuario ve solo sus tareas)
-- [ ] Documentación interactiva con Swagger / OpenAPI
+- [x] Documentación interactiva con Swagger / OpenAPI
 - [ ] PostgreSQL + Docker Compose
 - [ ] Logging estructurado y rate limiting
 - [ ] CI con GitHub Actions

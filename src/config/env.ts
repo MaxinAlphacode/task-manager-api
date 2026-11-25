@@ -5,7 +5,7 @@ import { z } from 'zod';
 // ANTES de arrancar. Si falta algo, la app se detiene con un mensaje claro.
 const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
-  PORT: z.coerce.number().int().positive().default(3000),
+  PORT: z.coerce.number().int().positive().default(4000),
   DATABASE_URL: z.string().min(1),
   // La "llave" con la que firmamos los tokens. Corta = fácil de adivinar = insegura.
   JWT_SECRET: z.string().min(32, 'JWT_SECRET debe tener al menos 32 caracteres'),
