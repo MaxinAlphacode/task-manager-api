@@ -1,5 +1,11 @@
 # Task Manager API
 
+[![CI](https://github.com/MaxinAlphacode/task-manager-api/actions/workflows/ci.yml/badge.svg)](https://github.com/MaxinAlphacode/task-manager-api/actions/workflows/ci.yml)
+![Node.js](https://img.shields.io/badge/Node.js-24-339933?logo=nodedotjs&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-17-4169E1?logo=postgresql&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-ready-2496ED?logo=docker&logoColor=white)
+
 API REST de gestión de tareas construida con **Node.js, TypeScript, Express 5, Prisma, PostgreSQL y Zod**, con autenticación JWT, aislamiento de datos por usuario, documentación OpenAPI, validación, manejo centralizado de errores, paginación, filtros, tests automatizados y despliegue con Docker.
 
 ## Stack
@@ -16,6 +22,7 @@ API REST de gestión de tareas construida con **Node.js, TypeScript, Express 5, 
 | Seguridad | Helmet, CORS | Cabeceras seguras y control de orígenes |
 | Tests | Vitest + Supertest | Tests de integración contra la API y un PostgreSQL real |
 | Contenedores | Docker (multi-stage) + Docker Compose | Mismo entorno en cualquier máquina |
+| CI | GitHub Actions | Tests, auditoría y prueba de humo en cada push |
 
 ## Arquitectura
 
@@ -62,6 +69,8 @@ tests/                     # tests de integración
 Dockerfile                 # imagen de la API (build multi-stage, usuario sin privilegios)
 docker-compose.yml         # PostgreSQL + migraciones + API
 docker/postgres/           # script que crea la base de tests al iniciar PostgreSQL
+scripts/smoke-test.sh      # prueba de humo contra una API ya desplegada
+.github/workflows/ci.yml   # pipeline de integración continua
 ```
 
 ## Cómo correrlo
@@ -111,6 +120,21 @@ npm run dev                  # http://localhost:4000
 - **Multi-stage:** la etapa `build` instala todo y compila. La etapa `runtime` solo copia `dist/` y las dependencias de producción.
 - Se instala con `npm ci --omit=dev --omit=optional`: `@prisma/client` declara la CLI de Prisma y TypeScript como *peer dependencies* opcionales, y sin el segundo flag terminan en la imagen (≈250 MB más y dependencias con alertas de seguridad). Con él, `npm audit` de producción reporta **0 vulnerabilidades**.
 - Corre como usuario `node` (no root), con `HEALTHCHECK` y apagado ordenado ante `SIGTERM`.
+
+## Integración continua (GitHub Actions)
+
+Cada `push` y cada *pull request* a `main` ejecuta [`ci.yml`](.github/workflows/ci.yml) en una máquina limpia:
+
+| Trabajo | Qué comprueba |
+|---|---|
+| **Typecheck, tests y auditoría** | `npm ci` → `tsc --noEmit` → 20 tests contra un PostgreSQL de servicio → `npm audit` de producción (falla si hay vulnerabilidades altas) |
+| **Imagen Docker y prueba de humo** | Solo si el anterior pasó: `docker compose up --build --wait` (db → migrate → api) y [`smoke-test.sh`](scripts/smoke-test.sh): health, registro, 401 sin token, crear y listar tareas |
+
+El pipeline corre con permisos de solo lectura y cancela ejecuciones viejas si llega un push nuevo. Para correr la prueba de humo en local (con Git Bash y el stack encendido):
+
+```bash
+sh ./scripts/smoke-test.sh http://localhost:4000
+```
 
 ## Documentación interactiva (Swagger)
 
@@ -183,5 +207,5 @@ Error de validación (formato uniforme):
 - [x] Documentación interactiva con Swagger / OpenAPI
 - [x] PostgreSQL + Docker Compose (Prisma 7)
 - [ ] Logging estructurado y rate limiting
-- [ ] CI con GitHub Actions
+- [x] CI con GitHub Actions (tests, auditoría, build de Docker y prueba de humo)
 - [ ] Despliegue en la nube

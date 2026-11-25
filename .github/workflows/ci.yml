@@ -1,0 +1,96 @@
+# CI = "Integración Continua": un robot de GitHub que, en cada push o pull request,
+# descarga el código en una máquina limpia y comprueba que todo sigue funcionando.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Si haces dos push seguidos, cancela la ejecución vieja y deja solo la nueva.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# El robot solo necesita LEER el código (principio de mínimo privilegio).
+permissions:
+  contents: read
+
+jobs:
+  # ── Trabajo 1: tipos, tests y auditoría de seguridad ───────────────────────
+  test:
+    name: Typecheck, tests y auditoría
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    # Un PostgreSQL de verdad, solo para esta ejecución.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: taskmanager
+          POSTGRES_PASSWORD: taskmanager
+          POSTGRES_DB: taskmanager_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U taskmanager -d taskmanager_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # Los tests leen esta variable (ver tests/test-env.mts).
+      TEST_DATABASE_URL: postgresql://taskmanager:taskmanager@localhost:5432/taskmanager_test
+
+    steps:
+      - name: Descargar el código
+        uses: actions/checkout@v4
+
+      - name: Instalar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Instalar dependencias (y generar el cliente de Prisma)
+        run: npm ci
+
+      - name: Revisar tipos (TypeScript)
+        run: npm run typecheck
+
+      - name: Correr tests contra PostgreSQL
+        run: npm test
+
+      - name: Auditoría de dependencias de producción
+        run: npm audit --omit=dev --omit=optional --audit-level=high
+
+  # ── Trabajo 2: construir la imagen y probarla de punta a punta ─────────────
+  docker:
+    name: Imagen Docker y prueba de humo
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: test # solo si los tests pasaron
+
+    env:
+      # Secreto desechable, solo para esta prueba (nunca uses uno real en el código).
+      JWT_SECRET: ci-smoke-test-secret-0123456789abcdefghij
+
+    steps:
+      - name: Descargar el código
+        uses: actions/checkout@v4
+
+      - name: Construir y levantar db → migrate → api
+        run: docker compose up --build -d --wait
+
+      - name: Prueba de humo (registro, login y crear tarea)
+        run: ./scripts/smoke-test.sh http://localhost:4000
+
+      - name: Mostrar logs si algo falló
+        if: failure()
+        run: docker compose logs
+
+      - name: Apagar todo
+        if: always()
+        run: docker compose down -v
