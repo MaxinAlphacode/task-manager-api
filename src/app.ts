@@ -3,6 +3,7 @@ import cors from 'cors';
 import helmet from 'helmet';
 import swaggerUi from 'swagger-ui-express';
 import { openApiDocument } from './docs/openapi';
+import { prisma } from './lib/prisma';
 import { authRouter } from './modules/auth/auth.routes';
 import { taskRouter } from './modules/tasks/task.routes';
 import { errorHandler, notFoundHandler } from './middlewares/error-handler';
@@ -16,8 +17,15 @@ export function createApp() {
   app.use(cors()); // permite que otros sitios web llamen a la API
   app.use(express.json({ limit: '100kb' })); // entiende cuerpos JSON
 
-  app.get('/api/health', (_req, res) => {
-    res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  // "¿Estás vivo?" Docker y los balanceadores lo preguntan cada pocos segundos.
+  // Si la base de datos no responde, decimos 503 para que no nos manden tráfico.
+  app.get('/api/health', async (_req, res) => {
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+      res.json({ status: 'ok', database: 'up', timestamp: new Date().toISOString() });
+    } catch {
+      res.status(503).json({ status: 'error', database: 'down', timestamp: new Date().toISOString() });
+    }
   });
 
   // Documentación: el JSON "crudo" para máquinas y la página bonita para personas.

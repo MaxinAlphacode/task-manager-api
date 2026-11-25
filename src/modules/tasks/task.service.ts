@@ -1,4 +1,4 @@
-import type { Prisma } from '@prisma/client';
+import type { Prisma } from '../../generated/prisma/client';
 import { prisma } from '../../lib/prisma';
 import { AppError } from '../../utils/app-error';
 import type { CreateTaskInput, ListTasksQuery, UpdateTaskInput } from './task.schema';
@@ -19,7 +19,11 @@ export const taskService = {
       ...(status && { status }),
       ...(priority && { priority }),
       ...(search && {
-        OR: [{ title: { contains: search } }, { description: { contains: search } }],
+        // insensitive: "PRISMA", "prisma" y "Prisma" encuentran lo mismo
+        OR: [
+          { title: { contains: search, mode: 'insensitive' } },
+          { description: { contains: search, mode: 'insensitive' } },
+        ],
       }),
     };
 

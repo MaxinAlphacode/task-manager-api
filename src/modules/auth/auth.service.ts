@@ -1,5 +1,5 @@
 import bcrypt from 'bcryptjs';
-import type { User } from '@prisma/client';
+import type { User } from '../../generated/prisma/client';
 import { prisma } from '../../lib/prisma';
 import { AppError } from '../../utils/app-error';
 import { signToken } from './token';

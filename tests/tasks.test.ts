@@ -21,10 +21,10 @@ beforeEach(async () => {
 afterAll(() => prisma.$disconnect());
 
 describe('GET /api/health', () => {
-  it('responde ok sin necesitar token', async () => {
+  it('responde ok y confirma la base de datos, sin necesitar token', async () => {
     const res = await request(app).get('/api/health');
     expect(res.status).toBe(200);
-    expect(res.body.status).toBe('ok');
+    expect(res.body).toMatchObject({ status: 'ok', database: 'up' });
   });
 });
 
@@ -68,6 +68,26 @@ describe('Tasks CRUD', () => {
     expect(res.status).toBe(200);
     expect(res.body.data).toHaveLength(1);
     expect(res.body.meta).toMatchObject({ total: 2, totalPages: 2, page: 1, limit: 1 });
+  });
+
+  it('busca sin distinguir mayúsculas y ordena por prioridad', async () => {
+    await prisma.task.createMany({
+      data: [
+        { title: 'Aprender PRISMA', priority: 'LOW', userId },
+        { title: 'repasar prisma 7', priority: 'HIGH', userId },
+        { title: 'Ir al gimnasio', priority: 'MEDIUM', userId },
+      ],
+    });
+
+    const res = await request(app)
+      .get('/api/tasks?search=Prisma&sortBy=priority&order=desc')
+      .set(auth());
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.map((t: { title: string }) => t.title)).toEqual([
+      'repasar prisma 7', // HIGH
+      'Aprender PRISMA', // LOW
+    ]);
   });
 
   it('actualiza parcialmente una tarea', async () => {

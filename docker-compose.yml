@@ -1,0 +1,61 @@
+# Docker Compose = el "director de orquesta": enciende varios contenedores
+# en el orden correcto y los conecta en una red privada.
+#
+#   docker compose up -d db      → solo la base de datos (para desarrollar con npm run dev)
+#   docker compose up --build    → todo: base de datos + migraciones + API
+
+name: task-manager-api
+
+services:
+  # ── PostgreSQL ────────────────────────────────────────────────────────────
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-taskmanager}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-taskmanager}
+      POSTGRES_DB: ${POSTGRES_DB:-taskmanager}
+    ports:
+      - '5433:5432' # 5433 en tu PC → 5432 dentro del contenedor (tu PostgreSQL local ya usa 5432)
+    volumes:
+      - pgdata:/var/lib/postgresql/data # los datos sobreviven aunque borres el contenedor
+      - ./docker/postgres:/docker-entrypoint-initdb.d:ro # crea la base de tests la primera vez
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── Migraciones: crea/actualiza las tablas y termina ──────────────────────
+  migrate:
+    build:
+      context: .
+      target: build # usa la etapa que tiene la CLI de Prisma
+    command: ['npx', 'prisma', 'migrate', 'deploy']
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-taskmanager}:${POSTGRES_PASSWORD:-taskmanager}@db:5432/${POSTGRES_DB:-taskmanager}
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # ── La API ────────────────────────────────────────────────────────────────
+  api:
+    build:
+      context: .
+      target: runtime
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 4000
+      # Dentro de la red de Docker, la base de datos se llama "db" (no localhost).
+      DATABASE_URL: postgresql://${POSTGRES_USER:-taskmanager}:${POSTGRES_PASSWORD:-taskmanager}@db:5432/${POSTGRES_DB:-taskmanager}
+      JWT_SECRET: ${JWT_SECRET:?Define JWT_SECRET en el archivo .env}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-1h}
+    ports:
+      - '4000:4000'
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  pgdata:

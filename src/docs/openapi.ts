@@ -117,14 +117,15 @@ export const openApiDocument = {
     '/api/health': {
       get: {
         tags: ['Health'],
-        summary: 'Comprobar que la API está viva',
+        summary: 'Comprobar que la API y la base de datos están vivas',
         responses: {
           200: {
-            description: 'OK',
-            ...json({
-              type: 'object',
-              properties: { status: { type: 'string' }, timestamp: { type: 'string', format: 'date-time' } },
-            }),
+            description: 'Todo bien',
+            ...json(ref('Health'), { status: 'ok', database: 'up', timestamp: '2026-11-25T21:00:00.000Z' }),
+          },
+          503: {
+            description: 'La base de datos no responde',
+            ...json(ref('Health'), { status: 'error', database: 'down', timestamp: '2026-11-25T21:00:00.000Z' }),
           },
         },
       },
@@ -253,6 +254,14 @@ export const openApiDocument = {
       bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
     },
     schemas: {
+      Health: {
+        type: 'object',
+        properties: {
+          status: { type: 'string', enum: ['ok', 'error'] },
+          database: { type: 'string', enum: ['up', 'down'] },
+          timestamp: { type: 'string', format: 'date-time' },
+        },
+      },
       RegisterInput: toSchema(registerSchema),
       LoginInput: toSchema(loginSchema),
       CreateTaskInput: toSchema(createTaskSchema),
