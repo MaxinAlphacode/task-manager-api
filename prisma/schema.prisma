@@ -1,0 +1,27 @@
+// Este archivo es el "plano" de la base de datos.
+// Prisma lo lee y crea las tablas por nosotros.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  // Empezamos con SQLite (un archivo, sin instalar nada).
+  // Para producción se cambia a "postgresql" y listo.
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Task {
+  id          String    @id @default(uuid())
+  title       String
+  description String?
+  status      String    @default("PENDING") // PENDING | IN_PROGRESS | DONE
+  priority    String    @default("MEDIUM")  // LOW | MEDIUM | HIGH
+  dueDate     DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([status])
+  @@index([priority])
+}
